@@ -1,0 +1,66 @@
+{
+  "include": [
+    "$(MODDABLE)/examples/manifest_mod.json",
+    "$(MODDABLE)/examples/manifest_typings.json"
+  ],
+  "modules": {
+    "*": "./main"
+  },
+  "ffi": {
+    "sources": ["../c/wakeup_trial.c", "../c/worker_controls.c"],
+    "functions": {
+      "save_initial_wakeup": {
+        "arguments": ["int32_t", "uint32_t", "uint32_t", "uint32_t"],
+        "returns": "int32_t"
+      },
+      "worker_active_interval": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_monitoring_paused": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_is_running": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_default_interval": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_start": {
+        "arguments": ["int32_t"],
+        "returns": "int32_t"
+      },
+      "worker_acknowledge_activity": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_acknowledgment_received": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_stop": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_launched_reminder": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_take_reminder": {
+        "arguments": [],
+        "returns": "uint32_t"
+      },
+      "worker_uses_24_hour_clock": {
+        "arguments": [],
+        "returns": "int32_t"
+      },
+      "worker_local_minutes": {
+        "arguments": ["uint32_t"],
+        "returns": "int32_t"
+      }
+    }
+  }
+}
