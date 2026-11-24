@@ -150,14 +150,9 @@ uint32_t worker_take_reminder(void) {
   return reminder.last_activity_at;
 }
 
-int32_t worker_uses_24_hour_clock(void) {
-  return clock_is_24h_style();
-}
-
-int32_t worker_local_minutes(uint32_t timestamp) {
-  time_t at = timestamp;
-  const struct tm *local = localtime(&at);
-  return local->tm_hour * 60 + local->tm_min;
+uint32_t worker_elapsed_activity_minutes(uint32_t timestamp) {
+  const uint32_t now = time(NULL);
+  return timestamp <= now ? (now - timestamp) / 60 : 0;
 }
 
 static void on_worker_message(uint16_t type, AppWorkerMessage *message) {

@@ -21,7 +21,7 @@ let selection = 0;
 let status = "";
 let operation;
 let reminderTimer;
-let lastActivity;
+let elapsedActivityMinutes;
 let interval = Natives.worker_active_interval();
 let paused = Boolean(Natives.worker_monitoring_paused());
 
@@ -69,20 +69,11 @@ function drawDiagnostics() {
   render.drawText(status, body, black, 8, 198);
 }
 
-function lastActivityTime() {
-  const localMinutes = Natives.worker_local_minutes(lastActivity);
-  const hours = Math.floor(localMinutes / 60);
-  const minutes = String(localMinutes % 60).padStart(2, "0");
-  return Natives.worker_uses_24_hour_clock()
-    ? `${String(hours).padStart(2, "0")}:${minutes}`
-    : `${hours % 12 || 12}:${minutes} ${hours < 12 ? "AM" : "PM"}`;
-}
-
 function drawReminder() {
   render.drawText("Time to move", heading, black, 12, 8);
-  if (lastActivity) {
-    render.drawText("Last activity", body, darkGray, 12, 44);
-    render.drawText(lastActivityTime(), large, black, 12, 60);
+  if (elapsedActivityMinutes !== undefined) {
+    render.drawText(`${elapsedActivityMinutes} min`, large, black, 12, 39);
+    render.drawText("since last activity", body, darkGray, 12, 72);
   } else {
     render.drawText("No activity recorded", heading, black, 12, 52);
   }
@@ -110,7 +101,7 @@ function showReminder(activity) {
   }
   view = "reminder";
   status = "";
-  lastActivity = activity;
+  elapsedActivityMinutes = activity ? Natives.worker_elapsed_activity_minutes(activity) : undefined;
   Timer.clear(reminderTimer);
   reminderTimer = Timer.set(dismissReminder, 30000);
   draw();

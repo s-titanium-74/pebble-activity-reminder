@@ -53,13 +53,9 @@
         "arguments": [],
         "returns": "uint32_t"
       },
-      "worker_uses_24_hour_clock": {
-        "arguments": [],
-        "returns": "int32_t"
-      },
-      "worker_local_minutes": {
+      "worker_elapsed_activity_minutes": {
         "arguments": ["uint32_t"],
-        "returns": "int32_t"
+        "returns": "uint32_t"
       }
     }
   }
