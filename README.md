@@ -157,7 +157,7 @@ cc -std=c11 -Wall -Wextra -Werror tests/inactivity_test.c worker_src/c/inactivit
 
 Open **Activity Reminder** from the watch launcher. The home screen shows whether monitoring is on, off, or paused. Press Select to **Start** a 30-minute monitoring session or **Stop** an active session. Press Down to open **Diagnostics**.
 
-At a due reminder, the watch gives one short vibration and opens **Time to move**. The screen shows the last qualifying activity time in the watch's 12- or 24-hour format, or **No activity recorded** if the session has none.
+At a due reminder, the watch gives one short vibration and opens **Time to move**. The screen shows the whole minutes since the most recent qualifying activity from Pebble Health or **I moved**, calculated when the reminder opens. If the session has no qualifying activity, it shows **No activity recorded**.
 
 | Button | Action |
 | --- | --- |
@@ -176,7 +176,7 @@ A separate physical-watch run used a four-minute test interval and live Pebble H
 ### Test the reminder on Pebble Time 2
 
 1. Start monitoring from home and confirm **Monitoring on** and a `Worker scheduled` line for 1,800 seconds. Walk long enough to qualify during the session and verify a check uses the detected activity time to defer the reminder.
-2. With the watch worn and still, wait for a reminder. Verify one short vibration and compare the displayed time with `last_activity` in the logs. Press Select and verify the next `Worker scheduled` time is 1,800 seconds after `Activity acknowledged`.
+2. With the watch worn and still, wait for a reminder. Verify one short vibration and compare the displayed whole minutes with the elapsed time since `last_activity` in the logs. Press Select and verify the next `Worker scheduled` time is 1,800 seconds after `Activity acknowledged`.
 3. Dismiss a subsequent reminder with Back, then let another time out. In each case check that the same last activity time and the reserved recheck survive dismissal.
 4. At a later reminder, press Down and verify the worker stops and no further reminders arrive. Reopen the app and confirm **Monitoring off**. Test notification entry from the watchface and from another app with a recognizable state, and record the screen and app state after dismissal.
 
