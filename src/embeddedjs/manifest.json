@@ -7,12 +7,10 @@
     "*": "./main"
   },
   "ffi": {
-    "sources": ["../c/wakeup_trial.c", "../c/worker_controls.c"],
+    "sources": [
+      "../c/worker_controls.c"
+    ],
     "functions": {
-      "save_initial_wakeup": {
-        "arguments": ["int32_t", "uint32_t", "uint32_t", "uint32_t"],
-        "returns": "int32_t"
-      },
       "worker_active_interval": {
         "arguments": [],
         "returns": "int32_t"
@@ -25,12 +23,8 @@
         "arguments": [],
         "returns": "int32_t"
       },
-      "worker_default_interval": {
-        "arguments": [],
-        "returns": "int32_t"
-      },
       "worker_start": {
-        "arguments": ["int32_t"],
+        "arguments": [],
         "returns": "int32_t"
       },
       "worker_acknowledge_activity": {
@@ -54,8 +48,25 @@
         "returns": "uint32_t"
       },
       "worker_elapsed_activity_minutes": {
-        "arguments": ["uint32_t"],
+        "arguments": [
+          "uint32_t"
+        ],
         "returns": "uint32_t"
+      },
+      "worker_settings_value": {
+        "arguments": [
+          "int32_t"
+        ],
+        "returns": "int32_t"
+      },
+      "worker_save_settings": {
+        "arguments": [
+          "int32_t",
+          "int32_t",
+          "int32_t",
+          "int32_t"
+        ],
+        "returns": "int32_t"
       }
     }
   }

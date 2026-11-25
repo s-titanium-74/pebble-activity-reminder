@@ -15,6 +15,12 @@ bool inactivity_settings_valid(const InactivitySettings *settings) {
          settings->interval_seconds >= settings->window_minutes * ACTIVITY_MINUTE_SECONDS;
 }
 
+void inactivity_forget_detection(InactivitySession *session, time_t now) {
+  session->detected_at = 0;
+  // Use the new interval and window to bound the read after a rule change.
+  session->history_end = now - now % ACTIVITY_MINUTE_SECONDS;
+}
+
 InactivityHistory inactivity_history_begin(const InactivitySettings *settings,
                                            const InactivitySession *session, time_t now) {
   const time_t minute = ACTIVITY_MINUTE_SECONDS;

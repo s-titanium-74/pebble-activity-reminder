@@ -1,13 +1,11 @@
 #include <pebble.h>
 #include "worker_settings.h"
 
-void handle_spike_wakeup(void);
-
 int main(void) {
   AppLaunchReason reason = launch_reason();
   if (reason == APP_LAUNCH_WAKEUP) {
-    // Alloy's event loop exits before JavaScript starts if there is no window.
-    handle_spike_wakeup();
+    // Clear reservations left by earlier builds of the Wakeup comparison.
+    wakeup_cancel_all();
     return 0;
   }
   if (reason == APP_LAUNCH_WORKER) {
