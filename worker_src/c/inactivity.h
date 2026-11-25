@@ -54,6 +54,7 @@ typedef struct {
   bool stop_monitoring;
 } InactivityDecision;
 
+void inactivity_forget_detection(InactivitySession *session, time_t now);
 bool inactivity_settings_valid(const InactivitySettings *settings);
 InactivityHistory inactivity_history_begin(const InactivitySettings *settings,
                                            const InactivitySession *session, time_t now);

@@ -1,76 +1,29 @@
 #include <pebble_worker.h>
 #include <inttypes.h>
 
-#include "../../src/c/worker_settings.h"
-#include "inactivity.h"
+#include "../../src/c/worker_storage.h"
 
 enum { HEALTH_BATCH_MINUTES = 16 };
 
 static AppTimer *s_timer;
 static bool s_waiting_to_retry;
-static InactivitySettings s_settings = {
-  .window_minutes = ACTIVITY_DEFAULT_WINDOW,
-  .step_threshold = ACTIVITY_DEFAULT_STEPS,
-};
+static InactivitySettings s_settings;
 static InactivitySession s_session;
 static uint16_t s_session_id;
+static uint32_t s_detection_generation;
 static time_t s_due_at;
 
 static void schedule_check(time_t due_at, bool allow_retry);
 static void cancel_check(void);
+static bool reload_configuration(time_t now);
 
 static bool session_is_current(void) {
-  return s_settings.interval_seconds > 0 &&
-         s_settings.interval_seconds == persist_read_int(WORKER_INTERVAL_KEY) &&
-         s_session_id == (uint16_t)persist_read_int(WORKER_SESSION_KEY);
+  return worker_monitoring_enabled() && !persist_read_bool(WORKER_MONITORING_PAUSED_KEY) &&
+         s_session_id == worker_current_session();
 }
 
-static int read_diagnostic_minute(time_t minute, time_t observed) {
-  time_t start = minute;
-  time_t end = minute + 60;
-  HealthMinuteData record;
-  const uint32_t count = health_service_get_minute_history(&record, 1, &start, &end);
-  if (count == 0 || start != minute || end != minute + 60) {
-    APP_LOG(APP_LOG_LEVEL_INFO, "Health minute=%lu observed=%lu status=missing",
-            (unsigned long)minute, (unsigned long)observed);
-  } else if (record.is_invalid) {
-    APP_LOG(APP_LOG_LEVEL_INFO, "Health minute=%lu observed=%lu status=invalid",
-            (unsigned long)minute, (unsigned long)observed);
-  } else {
-    APP_LOG(APP_LOG_LEVEL_INFO, "Health minute=%lu observed=%lu status=valid steps=%u vmc=%u",
-            (unsigned long)minute, (unsigned long)observed,
-            (unsigned int)record.steps, (unsigned int)record.vmc);
-    return record.steps;
-  }
-  return ACTIVITY_UNKNOWN_STEPS;
-}
-
-static void log_activity_window(time_t end, int previous_steps, int current_steps) {
-  if (previous_steps == ACTIVITY_UNKNOWN_STEPS || current_steps == ACTIVITY_UNKNOWN_STEPS) {
-    APP_LOG(APP_LOG_LEVEL_INFO, "Activity window end=%lu threshold=%d status=unknown",
-            (unsigned long)end, ACTIVITY_DEFAULT_STEPS);
-    return;
-  }
-
-  const int steps = previous_steps + current_steps;
-  APP_LOG(APP_LOG_LEVEL_INFO, "Activity window end=%lu steps=%d threshold=%d status=%s",
-          (unsigned long)end, steps, ACTIVITY_DEFAULT_STEPS,
-          steps >= ACTIVITY_DEFAULT_STEPS ? "qualifying" : "below_threshold");
-}
-
-static void run_diagnostics(time_t now) {
-  const time_t minute_boundary = now - now % 60;
-  const int history_minutes = 4;
-  int previous_steps = ACTIVITY_UNKNOWN_STEPS;
-  for (int age_minutes = history_minutes; age_minutes > 0; age_minutes--) {
-    const time_t minute = minute_boundary - age_minutes * 60;
-    const int steps = read_diagnostic_minute(minute, now);
-    if (age_minutes < history_minutes) {
-      log_activity_window(minute + 60, previous_steps, steps);
-    }
-    previous_steps = steps;
-  }
-  schedule_check(now + WORKER_DIAGNOSTIC_INTERVAL_SECONDS, true);
+static bool detection_is_current(void) {
+  return s_detection_generation == worker_read_settings().detection_generation;
 }
 
 static void read_history(InactivityHistory *history) {
@@ -105,11 +58,12 @@ static void read_history(InactivityHistory *history) {
 }
 
 static void present_reminder(time_t issued_at, time_t last_activity_at) {
-  if (!session_is_current()) {
+  if (!session_is_current() || !detection_is_current()) {
     return;
   }
   const WorkerReminder reminder = {
     .issued_at = issued_at,
+    .detection_generation = s_detection_generation,
     .last_activity_at = last_activity_at,
     .session = s_session_id,
   };
@@ -118,7 +72,7 @@ static void present_reminder(time_t issued_at, time_t last_activity_at) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Could not save reminder (%d)", result);
     return;
   }
-  if (session_is_current()) {
+  if (session_is_current() && detection_is_current()) {
     APP_LOG(APP_LOG_LEVEL_INFO, "Reminder requested at=%lu last_activity=%lu",
             (unsigned long)issued_at, (unsigned long)last_activity_at);
     AppWorkerMessage message = {0};
@@ -131,6 +85,10 @@ static void evaluate_monitoring(time_t now) {
   InactivityHistory history = inactivity_history_begin(&s_settings, &s_session, now);
   read_history(&history);
   if (!session_is_current()) {
+    return;
+  }
+  if (!detection_is_current()) {
+    schedule_check(now, true);
     return;
   }
   const InactivityDecision decision = inactivity_evaluate(&s_settings, &s_session, &history, now);
@@ -172,13 +130,7 @@ static void check_history(void *context) {
   const time_t now = time(NULL);
   APP_LOG(APP_LOG_LEVEL_INFO, "Worker check due=%lu actual=%lu delay=%ld s",
           (unsigned long)s_due_at, (unsigned long)now, (long)now - (long)s_due_at);
-  if (s_settings.interval_seconds == WORKER_DIAGNOSTIC_INTERVAL_SECONDS) {
-    run_diagnostics(now);
-  } else {
-    if (now < s_session.history_end || now < s_session.acknowledged_at || now < s_session.started_at ||
-        now < s_session.reminded_at) {
-      s_session = (InactivitySession){.started_at = now};
-    }
+  if (!reload_configuration(now)) {
     evaluate_monitoring(now);
   }
 }
@@ -186,7 +138,9 @@ static void check_history(void *context) {
 static void retry_timer(struct tm *tick_time, TimeUnits units_changed) {
   tick_timer_service_unsubscribe();
   s_waiting_to_retry = false;
-  schedule_check(s_due_at, false);
+  if (!reload_configuration(time(NULL))) {
+    schedule_check(s_due_at, false);
+  }
 }
 
 static void schedule_check(time_t due_at, bool allow_retry) {
@@ -220,40 +174,51 @@ static void cancel_check(void) {
   }
 }
 
-static void load_interval(void) {
-  cancel_check();
-  if (persist_read_bool(WORKER_MONITORING_PAUSED_KEY)) {
-    const status_t result = persist_delete(WORKER_MONITORING_PAUSED_KEY);
-    if (result < 0) {
-      APP_LOG(APP_LOG_LEVEL_ERROR, "Could not clear paused monitoring state (%d)", (int)result);
-      return;
-    }
+// Returns true when it handled the check by stopping, starting, or rescheduling.
+static bool reload_configuration(time_t now) {
+  if (!worker_monitoring_enabled() || persist_read_bool(WORKER_MONITORING_PAUSED_KEY)) {
+    cancel_check();
+    s_session = (InactivitySession){0};
+    return true;
   }
-  const time_t now = time(NULL);
-  const uint16_t session_id = persist_read_int(WORKER_SESSION_KEY);
-  const bool was_monitoring = s_settings.interval_seconds >= WORKER_MIN_INTERVAL_SECONDS &&
-                              s_session_id == session_id;
+
+  const uint16_t session_id = worker_current_session();
+  const WorkerSettings saved = worker_read_settings();
+  const InactivitySettings next = {
+    .interval_seconds = saved.interval_minutes * ACTIVITY_MINUTE_SECONDS,
+    .window_minutes = saved.window_minutes,
+    .step_threshold = saved.step_threshold,
+  };
+  const bool new_session = !s_session.started_at || s_session_id != session_id ||
+      now < s_session.started_at || now < s_session.history_end ||
+      now < s_session.acknowledged_at || now < s_session.reminded_at;
+  const bool rule_changed = s_settings.window_minutes != next.window_minutes ||
+                            s_settings.step_threshold != next.step_threshold;
+  if (!new_session && !rule_changed && s_settings.interval_seconds == next.interval_seconds &&
+      s_detection_generation == saved.detection_generation) {
+    return false;
+  }
+
+  cancel_check();
   s_session_id = session_id;
-  s_settings.interval_seconds = persist_read_int(WORKER_INTERVAL_KEY);
-  if (s_settings.interval_seconds == WORKER_DIAGNOSTIC_INTERVAL_SECONDS) {
-    s_session = (InactivitySession){0};
-    schedule_check(now + WORKER_DIAGNOSTIC_INTERVAL_SECONDS, true);
-  } else if (s_settings.interval_seconds < WORKER_MIN_INTERVAL_SECONDS ||
-             s_settings.interval_seconds > WORKER_MAX_INTERVAL_SECONDS ||
-             !inactivity_settings_valid(&s_settings)) {
-    s_session = (InactivitySession){0};
-    APP_LOG(APP_LOG_LEVEL_INFO, "Worker is waiting for monitoring to start");
-  } else if (!was_monitoring || !s_session.started_at || now < s_session.history_end) {
+  s_detection_generation = saved.detection_generation;
+  s_settings = next;
+  if (new_session) {
     s_session = (InactivitySession){.started_at = now};
     schedule_check(now + s_settings.interval_seconds, true);
   } else {
+    if (rule_changed) {
+      inactivity_forget_detection(&s_session, now);
+    }
+    s_session.history_retry = (HistoryRetry){0};
     evaluate_monitoring(now);
   }
+  return true;
 }
 
 static void on_worker_message(uint16_t type, AppWorkerMessage *message) {
-  if (type == WORKER_INTERVAL_CHANGED) {
-    load_interval();
+  if (type == WORKER_START_REQUESTED || type == WORKER_SETTINGS_CHANGED) {
+    reload_configuration(time(NULL));
   } else if (type == WORKER_ACTIVITY_ACKNOWLEDGED && s_session.started_at &&
              message->data2 == s_session_id && session_is_current()) {
     const time_t acknowledged_at = ((uint32_t)message->data1 << 16) | message->data0;
@@ -281,9 +246,7 @@ int main(void) {
   const WatchInfoVersion firmware = watch_info_get_firmware_version();
   APP_LOG(APP_LOG_LEVEL_INFO, "Activity Reminder worker started firmware=%u.%u.%u",
           (unsigned int)firmware.major, (unsigned int)firmware.minor, (unsigned int)firmware.patch);
-  if (!persist_read_bool(WORKER_MONITORING_PAUSED_KEY)) {
-    load_interval();
-  }
+  reload_configuration(time(NULL));
   worker_event_loop();
   cancel_check();
   app_worker_message_unsubscribe();

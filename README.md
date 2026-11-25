@@ -4,7 +4,7 @@ Configurable inactivity reminders for Pebble Time 2, using activity history and 
 
 ## Status
 
-**Activity Reminder** provides manual monitoring controls and inactivity reminders on Pebble Time 2. The watch app also includes diagnostics for Pebble Health history and Wakeup behavior.
+**Activity Reminder** provides manual monitoring controls and configurable inactivity reminders on Pebble Time 2.
 
 ## Pebble Time 2 verification
 
@@ -28,28 +28,17 @@ pebble install --emulator emery --logs
 
 The build produces `build/pebble-activity-reminder.pbw`. On a paired Pebble Time 2, enable Developer Connection in the Pebble mobile app, sign in with the same Pebble account on the computer, and run `pebble install --cloudpebble --logs` after `pebble login`. For a LAN connection, use `pebble install --phone <server-ip> --logs`. Keep the log stream open during each trial. [Developer Connection guide](https://developer.repebble.com/guides/tools-and-resources/developer-connection/)
 
-### Test Background Worker
+### Background Worker trial
 
-1. Open **Activity Reminder** from the watch launcher and press Down for **Diagnostics**. Use Up or Down to choose **10 sec (quick test)**, **15 minutes**, **30 minutes**, or **60 minutes**. Press Select to start the worker or replace its pending timer with the selected interval. The first selection defaults to 30 minutes.
-2. For a quick test, choose **10 sec (quick test)** and return to the watchface or open another app immediately. Use `Worker scheduled` and `Worker check` to identify the check times. Across at least two checks, observe the display, app state, and button input. Repeat with both the watchface and the other app.
-3. Choose **30 minutes**, leave the watch idle with a watchface, and capture the next `Worker check` to verify long-interval delivery. The timestamp and delay are logged in seconds. The `Inactivity check` line shows the latest qualifying activity time, the next scheduled time, and the decision.
-4. Reopen **Activity Reminder**, press Down for **Diagnostics**, choose **Stop worker**, and verify the checks cease. For battery measurements, disconnect live logging and use the same watchface and connection conditions with the worker stopped and with the normal interval enabled. PebbleOS permits one background worker at a time and may prompt to replace another app's worker. [Background Worker guide](https://developer.repebble.com/guides/events-and-services/background-worker/)
+The earlier 10-second trial polled on a fixed interval. Current builds use rolling Pebble Health history for monitoring. PebbleOS permits one background worker at a time and may prompt to replace another app's worker. [Background Worker guide](https://developer.repebble.com/guides/events-and-services/background-worker/)
 
-The Alloy menu controls the native worker. The 10-second diagnostic polls on a fixed interval. The 15-, 30-, and 60-minute options run inactivity monitoring and schedule the next check based on activity history and reminder requests.
+On the Emery emulator (firmware 4.44.3), 10-second checks fired on time and read a minute of Health data. The watchface remained visible, and a separate counter app kept its value and accepted button input after two checks. Selecting 30 minutes replaced the pending 10-second timer with a 1,800-second timer. On the physical Pebble Time 2, the user observed no foreground interruption during the Background Worker trial. The physical-watch reminder test below subsequently verified a 30-minute check. Battery impact remains to be measured.
 
-On the Emery emulator (firmware 4.44.3), 10-second checks fired on time and read a minute of Health data. The watchface remained visible, and a separate counter app kept its value and accepted button input after two checks. Selecting 30 minutes replaced the pending 10-second timer with a 1,800-second timer. On the physical Pebble Time 2, the user observed no foreground interruption during the Background Worker trial. A full 30-minute check and battery impact remain to be measured on the physical watch.
-
-### Test activity history
+### Activity history trial
 
 [Issue #2](https://github.com/s-titanium-74/pebble-activity-reminder/issues/2) compares recorded steps and VMC (Vector Magnitude Counts) for candidate detection rules. SDK 4.44 exposes both in `HealthMinuteData` through `health_service_get_minute_history()`. The app declares the `health` capability. Enable Pebble Health and allow the app's Health access if the watch requests it. The worker logs the firmware version at start. [Pebble Health API guide](https://developer.repebble.com/guides/events-and-services/health/)
 
-1. Install the build and save the log stream. In the watch app, open **Diagnostics** and select **10 sec (quick test)**. The worker rereads the four latest completed minutes on every poll so a late or revised record can be observed.
-2. Note the start and end time of each phase. Give each phase two complete clock minutes and switch phases near minute boundaries. Test sitting still, normal walking, moving the watch wrist while seated, light non-walking exercise such as standing arm movements with feet planted, and leaving the watch still on a table while unworn. Record whether Pebble Health was enabled during the trial.
-3. Keep the worker running for at least one additional minute after the last phase to catch late records. Then select **Stop worker**. Use the `Health minute` lines and the phase times for comparison.
-
-```sh
-pebble install build/pebble-activity-reminder.pbw --cloudpebble --logs | tee /tmp/pebble-health.log
-```
+The trial polled the four latest completed minutes every 10 seconds to observe late or revised records. It sampled sitting, walking, light exercise, and the watch sitting unworn.
 
 Each `Health minute` line identifies the minute's start and observation time as Unix timestamps in seconds. `status=valid` includes `steps` and `vmc`, `status=invalid` means the API flagged the record, and `status=missing` means no record was returned for that exact minute. Estimate availability delay by subtracting the minute's end (`minute + 60`) from the first `observed` time with a valid record. Report this as an observed delay at 10-second polling resolution and track any later value changes. A valid zero is a measurement. Missing or invalid minutes leave activity unknown, and the history API does not expose whether the watch was worn for a minute.
 
@@ -77,16 +66,9 @@ The provisional rule is **20 steps in two consecutive valid minutes**. This make
 
 A rule that qualifies either 10 total steps or a two-minute VMC sum above 1,000 recovered both missed Ring Fit windows (29 of 29 instead of 27 of 29). It also qualified both recent zero-step seated windows. Using a VMC value above 1,000 in either minute gave the same counts for the supplied samples. Light walking, cooking, and stretching already met the step rule in every sampled window. The observed trade-off is that the VMC threshold would reset the inactivity timer in the seated sample.
 
-### Repeat the Wakeup comparison
+### Wakeup comparison
 
-1. Record the watch firmware version. Stop the worker, then open **Diagnostics** in **Activity Reminder** and choose **Wakeup comparison**. Confirm the log contains `Wakeup Spike armed`. This replaces any earlier Wakeup reservations made by the spike.
-2. Return to the watchface immediately and record until the log shows `Trial complete`. The first Wakeup is requested for 10 seconds after arming. It reads the trial marker and requests a second Wakeup 10 seconds later. In both the emulator and the physical-watch trials, the second fired 30 seconds after the first, so allow about 40 seconds for the full trial.
-3. Start a new comparison and open a different watchapp with a recognizable state before the first Wakeup. Note its name and state. Record both Wakeups and check whether the app, its state, and button input remain available without manual recovery. If the first Wakeup interrupts the app, record what happened and reopen it before the second Wakeup.
-4. For each Wakeup, record the scheduled and actual times, any visible transition, the screen shown after exit, and any interruption or reservation error. The log reports error codes and delay in seconds. Keep emulator and physical-watch observations distinct.
-
-The comparison uses Alloy to arm a 10-second reservation and store a small trial record through the SDK's native interface. The scheduled path reads that record before entering the Alloy event loop. It returns from the C entry point without creating a `Window`. The initial Alloy-only attempt with no `Window` exited before JavaScript ran in the Emery emulator. The [PebbleOS Alloy startup](https://github.com/coredevices/PebbleOS/blob/main/pebble/applib/moddable/moddable.c) and [app event loop](https://github.com/coredevices/PebbleOS/blob/main/pebble/applib/app.c) show why. The SDK documents a one-minute restriction between pending reservations from the same app. The spike schedules its second reservation after the first fires. [Wakeup API](https://developer.repebble.com/docs/c/Foundation/Wakeup/)
-
-### Findings and decision
+The earlier trial used Alloy to reserve an initial Wakeup and persist a marker. A scheduled C entry point read the marker and reserved a second Wakeup without creating a window. The initial Alloy-only attempt with no window exited before JavaScript ran in the Emery emulator. [PebbleOS Alloy startup](https://github.com/coredevices/PebbleOS/blob/main/pebble/applib/moddable/moddable.c) · [Wakeup API](https://developer.repebble.com/docs/c/Foundation/Wakeup/)
 
 On a physical Pebble Time 2 with firmware 4.47.2, one 10-second trial covered the watchface for the first Wakeup and Timer Core for the second. The first fired 11 seconds after arming, one second past its requested time. The watchface visibly shifted for a moment. The logs show that Multifunctional 7 Segment Reborn exited and initialized again. The second fired 30 seconds after the first, 20 seconds past its requested time. Timer Core closed when that Wakeup fired. Both checks read the same stored marker and exited through the no-window path. The screen shown after Timer Core closed and its state after reopening remain unrecorded.
 
@@ -109,9 +91,9 @@ Activity means movement that meets the configured detection criteria, not simply
 - Make the inactivity interval configurable; 30 minutes is an example, not a finalized default.
 - Make activity detection configurable, including the detection method and its relevant thresholds and evaluation window.
 - Recheck activity history at every scheduled timer callback before deciding whether to alert.
-- Display the last qualifying activity time on the reminder screen.
+- Display whole minutes since the last qualifying activity on the reminder screen.
 - Provide manual activity acknowledgment and a Stop action on that screen.
-- Make vibration intensity/pattern configurable; exact options remain to be defined and validated.
+- Let the wearer select the reminder vibration pattern.
 - Do not include snooze or a separate reminder-suppression feature.
 - Use the same configured interval for inactivity detection and post-reminder rechecks.
 - Do not include automatic weekday or time-of-day scheduling in the initial version.
@@ -128,11 +110,11 @@ Let T be the configured inactivity interval and L the latest qualifying activity
 
 Movement between checks is evaluated from the recorded history at the next check.
 
-The first reminder is due no sooner than T after monitoring starts. The worker uses only completed minutes that started at or after the monitoring start. If neither history nor manual acknowledgment has supplied a qualifying time, the start time sets the first deadline and the latest activity time stays unset (`last_activity=0` in logs). The worker keeps the latest confirmed timestamp for the running session. Changing the interval while monitoring keeps that session and re-evaluates the deadline. Stopping or switching to the 10-second diagnostic ends the session.
+The first reminder is due no sooner than T after monitoring starts. The worker uses only completed minutes that started at or after the monitoring start. If neither history nor manual acknowledgment has supplied a qualifying time, the start time sets the first deadline and the latest activity time stays unset (`last_activity=0` in logs). The worker keeps the latest confirmed timestamp for the running session. Changing the interval while monitoring keeps that session and re-evaluates the deadline. Stopping ends the session.
 
 At every check, the worker rereads the minutes since the previous check and at least the most recent T, with overlap for rolling windows. Once a reminder is due, a missing, invalid, or delayed record in any relevant window leaves inactivity unknown. The worker logs `history_pending` and retries after 1, 2, 4, and 8 minutes, then at most every 15 minutes. Normal scheduling resumes once the missing data arrives or falls outside the relevant windows. A valid zero-step record counts as evidence. The current, unfinished minute is outside the evaluation.
 
-If inactivity still cannot be determined one hour after the first pending check, monitoring pauses and all pending timers are canceled. The home screen shows **Monitoring paused** and **Health data unavailable**. Choose **Start** to begin a new session. The **10 sec (quick test)** diagnostic uses its own fixed interval.
+If inactivity still cannot be determined one hour after the first pending check, monitoring pauses and all pending timers are canceled. The home screen shows **Monitoring paused** and **Health data unavailable**. Choose **Start** to begin a new session.
 
 The worker logs `Reminder requested` and reserves the next check before requesting the screen. The app logs `Reminder displayed` when it consumes the request. A timer registration failure is logged and retried once at the next minute tick. Restart monitoring to recover from a second failure.
 
@@ -155,9 +137,9 @@ cc -std=c11 -Wall -Wextra -Werror tests/inactivity_test.c worker_src/c/inactivit
 
 ## Monitoring controls and reminders
 
-Open **Activity Reminder** from the watch launcher. The home screen shows whether monitoring is on, off, or paused. Press Select to **Start** a 30-minute monitoring session or **Stop** an active session. Press Down to open **Diagnostics**.
+Open **Activity Reminder** from the watch launcher. The home screen shows whether monitoring is on, off, or paused. Press Select to **Start** monitoring with the saved interval or **Stop** an active session. Press Down to open **Settings**, or Back to exit the app. The home and reminder screens list the Select and Down buttons before their actions.
 
-At a due reminder, the watch gives one short vibration and opens **Time to move**. The screen shows the whole minutes since the most recent qualifying activity from Pebble Health or **I moved**, calculated when the reminder opens. If the session has no qualifying activity, it shows **No activity recorded**.
+At a due reminder, the watch plays the saved vibration pattern and opens **Time to move**. The screen shows the whole minutes since the most recent qualifying activity from Pebble Health or **I moved**, calculated when the reminder opens. If the session has no qualifying activity, it shows **No activity recorded**.
 
 | Button | Action |
 | --- | --- |
@@ -175,22 +157,35 @@ A separate physical-watch run used a four-minute test interval and live Pebble H
 
 ### Test the reminder on Pebble Time 2
 
-1. Start monitoring from home and confirm **Monitoring on** and a `Worker scheduled` line for 1,800 seconds. Walk long enough to qualify during the session and verify a check uses the detected activity time to defer the reminder.
+1. In **Settings**, save a 30-minute interval and **Short**. Start monitoring from home and confirm **Monitoring on** and a `Worker scheduled` line for 1,800 seconds. Walk long enough to qualify during the session and verify a check uses the detected activity time to defer the reminder.
 2. With the watch worn and still, wait for a reminder. Verify one short vibration and compare the displayed whole minutes with the elapsed time since `last_activity` in the logs. Press Select and verify the next `Worker scheduled` time is 1,800 seconds after `Activity acknowledged`.
 3. Dismiss a subsequent reminder with Back, then let another time out. In each case check that the same last activity time and the reserved recheck survive dismissal.
 4. At a later reminder, press Down and verify the worker stops and no further reminders arrive. Reopen the app and confirm **Monitoring off**. Test notification entry from the watchface and from another app with a recognizable state, and record the screen and app state after dismissal.
 
 ## Settings
 
-| Setting | Purpose |
-| --- | --- |
-| Inactivity interval | Time since qualifying activity before an alert; also the interval between reminders while inactivity continues. |
-| Activity detection method | Select how movement qualifies as activity. |
-| Evaluation window | Period over which activity is evaluated, where applicable. |
-| Activity thresholds | Method-specific values such as steps within the evaluation window. |
-| Alert strength | Configurable vibration behavior; supported options to be validated. |
+Open **Activity Reminder** and press Down for **Settings**. Use Up or Down to highlight a row and Select to edit it. For numeric fields, Up and Down change the highlighted digit, and Select advances to the next digit or accepts the last one. On the vibration screen, Up and Down choose a pattern and Select accepts it. Back in an editor cancels that field edit. Select **Save** in the settings list to apply the full set, or press Back to discard the draft.
 
-The trial detection threshold is 20 steps in two minutes. The production threshold and inactivity interval remain configurable design parameters.
+| Setting | Provisional default | Options |
+| --- | --- | --- |
+| Interval | 30 min | 2–60 min in one-minute steps. Also sets the recheck interval after a reminder. |
+| Window | 2 min | 1 minute up to the configured interval. Uses consecutive, complete, valid Health minutes. |
+| Step threshold | 20 steps | 1 through 255 × window length in minutes. A total at or above the threshold qualifies. |
+| Vibration | Short | **Short** gives one brief pulse, **Double** gives two brief pulses, and **Long** gives one extended pulse. |
+
+Activity detection uses the total step count across the evaluation window. The watch validates all fields before saving. An invalid value leaves the draft open and the previously saved settings in use. Settings are stored on the watch across app exits and reboots. The background worker reads them on startup and at scheduled checks. Reminders use the saved Pebble SDK vibration pattern. [Pebble SDK Vibes](https://developer.repebble.com/docs/c/User_Interface/Vibes/)
+
+Saving while stopped or paused leaves monitoring in that state. The next manual start uses the saved values. When detection settings change during a session, the worker cancels the pending check and re-evaluates using the saved settings. An interval change keeps the last detected activity. A window or step threshold change discards activity detected under the old rule and rereads the new interval plus the minutes required for overlapping windows, limited to the current session. Monitoring start, manual acknowledgment, and the last reminder time still contribute to scheduling. If the new deadline has passed, the worker immediately requests a reminder when history is sufficient or retries when data is missing. A vibration-only change leaves the scheduled time in place and applies when the next reminder is displayed.
+
+On the Emery emulator (firmware 4.44.3), settings survived closing and reopening the app and restarting the emulator. The settings screen rejected a zero-minute interval, changing only vibration left the pending check in place, and shortening the interval triggered an immediate history check. A separate emulator run with synthetic Health history verified an immediate reminder after shortening the interval, the selected pattern on a scheduled app launch, and saving new settings while monitoring was paused.
+
+### Verify settings on Pebble Time 2
+
+1. With monitoring off, change the interval and pattern, save, then close and reopen the app. Check that the saved values reappear and monitoring stays off. Try saving a window longer than the interval and confirm the old values survive.
+2. Start monitoring with the saved values. Change the interval during monitoring and verify the new deadline in the worker log. Check that a vibration-only save leaves the pending deadline in place.
+3. With the watch worn, set a short interval and use a high threshold for the trial so small movements do not qualify. Let a normal reminder fire for each of **Short**, **Double**, and **Long**. Record the firmware and the physical pulses, including one reminder after an app exit. Restore the desired interval and threshold after the trial.
+
+On a Pebble Time 2 running firmware 4.47.2, a reminder arrived with the interval set to 20 minutes. Changing the interval to two minutes during monitoring replaced the pending check. The next reminder appeared two minutes after the previous one, and **I moved** scheduled the next check two minutes after the acknowledgment. The reminder logs recorded the **Double** and **Short** selections in this run.
 
 ## Activity detection candidates
 
@@ -206,7 +201,7 @@ These are options to investigate, not commitments to implement every method.
 
 Manual acknowledgment is a required supplementary input, independent of the automatic detection method.
 
-Initial monitoring uses the steps rule selected in [Issue #2](https://github.com/s-titanium-74/pebble-activity-reminder/issues/2), with the end of the latest qualifying window as the detected activity time. The interval, window length, and step threshold are configurable in the implementation, with provisional values of 30 minutes, two minutes, and 20 steps.
+Initial monitoring uses the steps rule selected in [Issue #2](https://github.com/s-titanium-74/pebble-activity-reminder/issues/2), with the end of the latest qualifying window as the detected activity time.
 
 ## Execution strategy
 
@@ -226,7 +221,7 @@ Routine checks use recorded Pebble Health history and run while the worker remai
 
 - Tuning the provisional inactivity interval, step threshold, and evaluation window with controlled real-device captures.
 - End-to-end reminder behavior on Pebble Time 2, including what happens to another running app when a reminder opens.
-- Available vibration options and their real-device behavior.
+- Physical-watch verification of the selectable vibration patterns.
 - Worker timer failures and delivery accuracy at the configured intervals.
 - Persistence and recovery across watch restarts.
 - Battery consumption at normal monitoring intervals.

@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-#include "../worker_src/c/inactivity.h"
+#include "../src/c/worker_settings.h"
 
 #define AT(hour, minute) ((time_t)((hour) * 3600 + (minute) * 60))
 
@@ -145,6 +145,69 @@ static void test_late_callback_and_configurable_rule(void) {
          AT(12, 17), AT(13, 0), true, false);
 }
 
+static void test_settings_validation(void) {
+  const WorkerSettings defaults = {
+    .interval_minutes = 30, .window_minutes = 2, .step_threshold = 20,
+    .vibration = REMINDER_VIBRATION_SHORT,
+  };
+  WorkerSettings saved = defaults;
+  assert(worker_validate_settings(&saved) == SETTINGS_VALID);
+  saved.vibration = REMINDER_VIBRATION_LONG;
+  assert(worker_validate_settings(&saved) == SETTINGS_VALID);
+  assert(!worker_detection_changed(&defaults, &saved));
+  saved.vibration = REMINDER_VIBRATION_LONG + 1;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_VIBRATION);
+
+  saved = (WorkerSettings){.interval_minutes = 2, .window_minutes = 1, .step_threshold = 1};
+  assert(worker_validate_settings(&saved) == SETTINGS_VALID);
+  assert(worker_detection_changed(&defaults, &saved));
+  saved.interval_minutes = 1;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_INTERVAL);
+  saved.interval_minutes = 61;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_INTERVAL);
+  saved.interval_minutes = 2;
+  saved.window_minutes = 3;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_WINDOW);
+  saved.window_minutes = 0;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_WINDOW);
+  saved.window_minutes = 1;
+  saved.step_threshold = 0;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_STEPS);
+
+  saved = (WorkerSettings){.interval_minutes = 60, .window_minutes = 60, .step_threshold = 15300};
+  assert(worker_validate_settings(&saved) == SETTINGS_VALID);
+  saved.step_threshold++;
+  assert(worker_validate_settings(&saved) == SETTINGS_INVALID_STEPS);
+}
+
+static void test_settings_change_during_session(void) {
+  const InactivitySettings shorter = {.interval_seconds = 5 * 60, .window_minutes = 2, .step_threshold = 40};
+  InactivitySession session = {
+    .started_at = AT(11, 0),
+    .history_end = AT(11, 58),
+    .detected_at = AT(11, 58),
+    .acknowledged_at = AT(11, 50),
+    .reminded_at = AT(11, 55),
+  };
+  const time_t now = AT(12, 0);
+  const MinuteSample old_rule_only[] = {{AT(11, 57), 20}};
+  expect(check(&settings, &session, now, 0, old_rule_only, 1),
+         AT(11, 59), AT(12, 29), false, false);
+  inactivity_forget_detection(&session, now);
+  const InactivityHistory history = inactivity_history_begin(&shorter, &session, now);
+  assert(history.next_minute == AT(11, 53));
+  assert(session.started_at == AT(11, 0));
+  assert(session.reminded_at == AT(11, 55));
+
+  InactivitySession missing_history = session;
+  expect(check(&shorter, &missing_history, now, ACTIVITY_UNKNOWN_STEPS, NULL, 0),
+         AT(11, 50), AT(12, 1), false, true);
+  expect(check(&shorter, &session, now, 0, old_rule_only, 1),
+         AT(11, 50), AT(12, 5), true, false);
+  expect(check(&shorter, &session, AT(12, 4), 0, NULL, 0),
+         AT(11, 50), AT(12, 5), false, false);
+}
+
 int main(void) {
   test_activity_between_checks();
   test_start_and_no_activity();
@@ -152,6 +215,8 @@ int main(void) {
   test_delayed_and_unavailable_history();
   test_history_backoff_and_shutdown();
   test_late_callback_and_configurable_rule();
+  test_settings_validation();
+  test_settings_change_during_session();
   puts("Inactivity tests passed");
   return 0;
 }
