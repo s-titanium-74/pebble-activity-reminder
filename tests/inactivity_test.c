@@ -145,6 +145,23 @@ static void test_late_callback_and_configurable_rule(void) {
          AT(12, 17), AT(13, 0), true, false);
 }
 
+static void test_clock_sync_after_reboot(void) {
+  const time_t before_sync = 1262304003;
+  const time_t after_sync = 1795606229;
+  const int interval = 2 * ACTIVITY_MINUTE_SECONDS;
+  const InactivitySession session = {.started_at = before_sync};
+  const time_t due = before_sync + interval;
+
+  assert(!inactivity_clock_needs_reset(&session, due, due));
+  assert(!inactivity_clock_needs_reset(&session, due, due + 3600));
+  assert(inactivity_clock_needs_reset(&session, due, due + 3601));
+  assert(inactivity_clock_needs_reset(&session, due, after_sync));
+
+  const InactivitySession restarted = {.started_at = after_sync};
+  assert(!inactivity_clock_needs_reset(&restarted, after_sync + interval, after_sync));
+  assert(inactivity_clock_needs_reset(&restarted, after_sync + interval, before_sync));
+}
+
 static void test_settings_validation(void) {
   const WorkerSettings defaults = {
     .interval_minutes = 30, .window_minutes = 2, .step_threshold = 20,
@@ -215,6 +232,7 @@ int main(void) {
   test_delayed_and_unavailable_history();
   test_history_backoff_and_shutdown();
   test_late_callback_and_configurable_rule();
+  test_clock_sync_after_reboot();
   test_settings_validation();
   test_settings_change_during_session();
   puts("Inactivity tests passed");

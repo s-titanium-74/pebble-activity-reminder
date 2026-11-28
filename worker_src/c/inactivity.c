@@ -3,6 +3,7 @@
 enum {
   HISTORY_RETRY_MAX_SECONDS = 15 * ACTIVITY_MINUTE_SECONDS,
   HISTORY_TIMEOUT_SECONDS = 60 * ACTIVITY_MINUTE_SECONDS,
+  CLOCK_RESET_THRESHOLD_SECONDS = 60 * ACTIVITY_MINUTE_SECONDS,
 };
 
 static time_t later(time_t a, time_t b) {
@@ -13,6 +14,15 @@ bool inactivity_settings_valid(const InactivitySettings *settings) {
   return settings->window_minutes >= 1 && settings->window_minutes <= ACTIVITY_MAX_WINDOW &&
          settings->step_threshold >= 1 && settings->step_threshold <= settings->window_minutes * UINT8_MAX &&
          settings->interval_seconds >= settings->window_minutes * ACTIVITY_MINUTE_SECONDS;
+}
+
+bool inactivity_clock_needs_reset(const InactivitySession *session, time_t next_check_at, time_t now) {
+  if (now < session->started_at || now < session->history_end ||
+      now < session->acknowledged_at || now < session->reminded_at) {
+    return true;
+  }
+  // Allow ordinary late callbacks and timer retries to catch up on history.
+  return next_check_at && (int64_t)now - (int64_t)next_check_at > CLOCK_RESET_THRESHOLD_SECONDS;
 }
 
 void inactivity_forget_detection(InactivitySession *session, time_t now) {
