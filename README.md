@@ -32,7 +32,13 @@ The build produces `build/pebble-activity-reminder.pbw`. On a paired Pebble Time
 
 The earlier 10-second trial polled on a fixed interval. Current builds use rolling Pebble Health history for monitoring. PebbleOS permits one background worker at a time and may prompt to replace another app's worker. [Background Worker guide](https://developer.repebble.com/guides/events-and-services/background-worker/)
 
-On the Emery emulator (firmware 4.44.3), 10-second checks fired on time and read a minute of Health data. The watchface remained visible, and a separate counter app kept its value and accepted button input after two checks. Selecting 30 minutes replaced the pending 10-second timer with a 1,800-second timer. On the physical Pebble Time 2, the user observed no foreground interruption during the Background Worker trial. The physical-watch reminder test below subsequently verified a 30-minute check. Battery impact remains to be measured.
+On the Emery emulator (firmware 4.44.3), 10-second checks fired on time and read a minute of Health data. The watchface remained visible, and a separate counter app kept its value and accepted button input after two checks. Selecting 30 minutes replaced the pending 10-second timer with a 1,800-second timer. On the physical Pebble Time 2, the user observed no foreground interruption during the Background Worker trial. The physical-watch reminder test below subsequently verified a 30-minute check.
+
+### Extended use
+
+The user reported approximately three days of real-device use without long-running problems. Monitoring after watch restarts and app exits worked, stopping worked, and no duplicate notifications, retry problems, or problems with missing or delayed history were observed. The user also reported no problems with the clock recovery change described below.
+
+Battery life was acceptable, with no perceptible increase in drain. This is a subjective observation, not a controlled enabled-versus-disabled measurement. The firmware, settings, reminder count, and battery readings for this extended run were not recorded. These observations do not establish that scheduling failures or missing history were deliberately induced.
 
 ### Activity history trial
 
@@ -111,6 +117,8 @@ Let T be the configured inactivity interval and L the latest qualifying activity
 Movement between checks is evaluated from the recorded history at the next check.
 
 The first reminder is due no sooner than T after monitoring starts. The worker uses only completed minutes that started at or after the monitoring start. If neither history nor manual acknowledgment has supplied a qualifying time, the start time sets the first deadline and the latest activity time stays unset (`last_activity=0` in logs). The worker keeps the latest confirmed timestamp for the running session. Changing the interval while monitoring keeps that session and re-evaluates the deadline. Stopping ends the session.
+
+If the watch clock moves behind the current monitoring state or a check is more than an hour past its recorded deadline, the worker starts a fresh session at the current watch time. The next check is one configured interval later. This covers the clock correction that can happen when the watch reconnects to the phone after a restart.
 
 At every check, the worker rereads the minutes since the previous check and at least the most recent T, with overlap for rolling windows. Once a reminder is due, a missing, invalid, or delayed record in any relevant window leaves inactivity unknown. The worker logs `history_pending` and retries after 1, 2, 4, and 8 minutes, then at most every 15 minutes. Normal scheduling resumes once the missing data arrives or falls outside the relevant windows. A valid zero-step record counts as evidence. The current, unfinished minute is outside the evaluation.
 
@@ -223,8 +231,8 @@ Routine checks use recorded Pebble Health history and run while the worker remai
 - End-to-end reminder behavior on Pebble Time 2, including what happens to another running app when a reminder opens.
 - Physical-watch verification of the selectable vibration patterns.
 - Worker timer failures and delivery accuracy at the configured intervals.
-- Persistence and recovery across watch restarts.
-- Battery consumption at normal monitoring intervals.
+- Controlled recovery tests for scheduling failures and missing or delayed history.
+- Quantitative battery comparison under comparable monitoring-enabled and disabled conditions.
 
 ## Prototype plan
 

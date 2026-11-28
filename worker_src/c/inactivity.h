@@ -56,6 +56,7 @@ typedef struct {
 
 void inactivity_forget_detection(InactivitySession *session, time_t now);
 bool inactivity_settings_valid(const InactivitySettings *settings);
+bool inactivity_clock_needs_reset(const InactivitySession *session, time_t next_check_at, time_t now);
 InactivityHistory inactivity_history_begin(const InactivitySettings *settings,
                                            const InactivitySession *session, time_t now);
 // Feed every minute in order, including missing or invalid minutes as ACTIVITY_UNKNOWN_STEPS.

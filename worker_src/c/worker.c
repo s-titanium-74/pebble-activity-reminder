@@ -189,9 +189,9 @@ static bool reload_configuration(time_t now) {
     .window_minutes = saved.window_minutes,
     .step_threshold = saved.step_threshold,
   };
-  const bool new_session = !s_session.started_at || s_session_id != session_id ||
-      now < s_session.started_at || now < s_session.history_end ||
-      now < s_session.acknowledged_at || now < s_session.reminded_at;
+  const bool session_changed = !s_session.started_at || s_session_id != session_id;
+  const bool clock_reset = !session_changed && inactivity_clock_needs_reset(&s_session, s_due_at, now);
+  const bool new_session = session_changed || clock_reset;
   const bool rule_changed = s_settings.window_minutes != next.window_minutes ||
                             s_settings.step_threshold != next.step_threshold;
   if (!new_session && !rule_changed && s_settings.interval_seconds == next.interval_seconds &&
@@ -204,6 +204,9 @@ static bool reload_configuration(time_t now) {
   s_detection_generation = saved.detection_generation;
   s_settings = next;
   if (new_session) {
+    if (clock_reset) {
+      APP_LOG(APP_LOG_LEVEL_INFO, "Watch clock changed: restarting monitoring at=%lu", (unsigned long)now);
+    }
     s_session = (InactivitySession){.started_at = now};
     schedule_check(now + s_settings.interval_seconds, true);
   } else {
